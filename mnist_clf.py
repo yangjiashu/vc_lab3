@@ -3,13 +3,14 @@ import numpy as np
 import sys
 sys.path.append('mnist')
 import mnist
+import matplotlib.pyplot as plt
 
 HIDDEN_UNIT_1 = 50
 HIDDEN_UNIT_2 = 50
 HIDDEN_UNIT_3 = 20
-EPOCHS = 1000
-BATCH_SIZE = 6000
-LR = 0.00001
+EPOCHS = 10000
+BATCH_SIZE = 1000
+LR = 6e-6
 LAMBDA = 1e-4
 
 train_images = mnist.train_images()
@@ -38,73 +39,95 @@ def weight_b(m, n, dtype='w'):
     else:
         raise ValueError('请输入正确的值：w / b')
 
-def accuracy(x,model,labels):
-    w1 = model['w1']
-    b1 = model['b1']
-    w2 = model['w2']
-    b2 = model['b2']
-    w3 = model['w3']
-    b3 = model['b3']
-    w4 = model['w4']
-    b4 = model['b4']
+def accuracy(x,model,labels,act='relu'):
     
-    hidden1 = vf.tanh_forward(x, w1, b1)
-    hidden2 = vf.relu_forward(hidden1, w2, b2)
-    hidden3 = vf.relu_forward(hidden2, w3, b3)
-    probs = vf.softmax_forward(hidden3, w4, b4)
+    hidden1 = vf.tanh_forward(x, model['w1'], model['b1'])
+    if act=='relu':
+        hidden2 = vf.relu_forward(hidden1, model['w2'], model['b2'])
+        hidden3 = vf.relu_forward(hidden2, model['w3'], model['b3'])
+    elif act=='tanh':
+        hidden2 = vf.tanh_forward(hidden1, model['w2'], model['b2'])
+        hidden3 = vf.tanh_forward(hidden2, model['w3'], model['b3'])
+    probs = vf.softmax_forward(hidden3, model['w4'], model['b4'])
+    
     y_hat = np.argmax(probs, axis=1)
     correct_prediction = np.equal(y_hat, labels).astype(np.float32)
     accuracy = np.mean(correct_prediction)
     
     return accuracy
     
-def train(model, epochs, batch_size, lr):
-    w1 = model['w1']
-    b1 = model['b1']
-    w2 = model['w2']
-    b2 = model['b2']
-    w3 = model['w3']
-    b3 = model['b3']
-    w4 = model['w4']
-    b4 = model['b4']
+def train(model, epochs, batch_size, lr, act='relu'):
+    
+    train_losses = []
+    test_losses = []
+    axis = []
+    
     # forward
     dataset = vf.Dataset(X_train, Y_train, True)
     for i in range(epochs):
         input_data, labels = dataset.next_batch(batch_size)    
         
         # forward
-        hidden1 = vf.tanh_forward(input_data, w1, b1)
-        hidden2 = vf.relu_forward(hidden1, w2, b2)
-        hidden3 = vf.relu_forward(hidden2, w3, b3)
-        probs = vf.softmax_forward(hidden3, w4, b4)
+        hidden1 = vf.tanh_forward(input_data, model['w1'], model['b1'])
+        if act=='relu':
+            hidden2 = vf.relu_forward(hidden1, model['w2'], model['b2'])
+            hidden3 = vf.relu_forward(hidden2, model['w3'], model['b3'])
+        elif act=='tanh':
+            hidden2 = vf.tanh_forward(hidden1, model['w2'], model['b2'])
+            hidden3 = vf.tanh_forward(hidden2, model['w3'], model['b3'])
+        else:
+            raise ValueError('请输入正确的激活函数: relu / tanh')
+        probs = vf.softmax_forward(hidden3, model['w4'], model['b4'])
         
         # loss
-        loss, dz = vf.cross_entropy(labels, probs)
+        train_loss, dz = vf.cross_entropy(labels, probs)
+        
         # backward
-        dw4, db4, dflow3 = vf.softmax_backward(dz, hidden3, w4, b4, reg_lambda=LAMBDA)
-        dw3, db3, dflow2 = vf.relu_backward(dflow3, hidden2, w3, b3, reg_lambda=LAMBDA)
-        dw2, db2, dflow1 = vf.relu_backward(dflow2, hidden1, w2, b2, reg_lambda=LAMBDA)
-        dw1, db1, _ = vf.tanh_backward(dflow1, input_data, w1, b1, reg_lambda=LAMBDA)
+        dw4, db4, dflow3 = vf.softmax_backward(dz, hidden3, model['w4'], model['b4'], reg_lambda=LAMBDA)
+        if act=='relu':
+            dw3, db3, dflow2 = vf.relu_backward(dflow3, hidden2, model['w3'], model['b3'], reg_lambda=LAMBDA)
+            dw2, db2, dflow1 = vf.relu_backward(dflow2, hidden1, model['w2'], model['b2'], reg_lambda=LAMBDA)
+        elif act=='tanh':
+            dw3, db3, dflow2 = vf.tanh_backward(dflow3, hidden2, model['w3'], model['b3'], reg_lambda=LAMBDA)
+            dw2, db2, dflow1 = vf.tanh_backward(dflow2, hidden1, model['w2'], model['b2'], reg_lambda=LAMBDA)
+        dw1, db1, _ = vf.tanh_backward(dflow1, input_data, model['w1'], model['b1'], reg_lambda=LAMBDA)
         
         # update
-        w4 += -lr * dw4
-        b4 += -lr * db4
-        w3 += -lr * dw3
-        b3 += -lr * db3
-        w2 += -lr * dw2
-        b2 += -lr * db2
-        w1 += -lr * dw1
-        b1 += -lr * db1
-        print(loss)
-    model['w4'] = w4
-    model['b4'] = b4
-    model['w3'] = w3
-    model['b3'] = b3
-    model['w2'] = w2
-    model['b2'] = b2
-    model['w1'] = w1
-    model['b1'] = b1
-    
+        model['w4'] += -lr * dw4
+        model['b4'] += -lr * db4
+        model['w3'] += -lr * dw3
+        model['b3'] += -lr * db3
+        model['w2'] += -lr * dw2
+        model['b2'] += -lr * db2
+        model['w1'] += -lr * dw1
+        model['b1'] += -lr * db1
+        
+        if (i + 1) % 10 == 0:
+            hidden1 = vf.tanh_forward(X_test, model['w1'], model['b1'])
+            if act=='relu':
+                hidden2 = vf.relu_forward(hidden1, model['w2'], model['b2'])
+                hidden3 = vf.relu_forward(hidden2, model['w3'], model['b3'])
+            elif act=='tanh':
+                hidden2 = vf.tanh_forward(hidden1, model['w2'], model['b2'])
+                hidden3 = vf.tanh_forward(hidden2, model['w3'], model['b3'])
+            probs = vf.softmax_forward(hidden3, model['w4'], model['b4'])
+            
+            # loss
+            test_loss, dz = vf.cross_entropy(Y_test, probs)
+            
+            if (i + 1) % 50 == 0:
+                if act=='relu':
+                    acc = accuracy(X_test, model, Y_test, act='relu')
+                elif act=='tanh':
+                    acc = accuracy(X_test, model, Y_test, act='tanh')
+                print('step %d: loss: %.4f, acc: %.4f' % (i+1, test_loss, acc))
+            else:
+                print('step %d: loss: %.4f' % (i+1, test_loss))
+            
+            train_losses.append(train_loss)
+            test_losses.append(test_loss)
+            axis.append(i+1)
+    return (train_losses, test_losses, axis)
 
 def main():
     # initialize  
@@ -119,9 +142,29 @@ def main():
     model['b4'] = weight_b(1, 10, 'b')
 
     
-    train(model, EPOCHS, BATCH_SIZE, LR)
+    train_losses, test_losses, axis = train(model, EPOCHS, BATCH_SIZE, LR, act='tanh')
+    plt.figure()
+    plt.subplot(121)
+    plt.title('tanh')
+    plt.xlabel('epochs')
+    plt.ylabel('loss')
+    plt.ylim(0.1,0.6)
+    plt.plot(axis, train_losses, c='blue', label='train')   
+    plt.plot(axis, test_losses, c='red', label='test')
+    plt.legend()
     
-    print(accuracy(X_train, model, Y_train))
+    train_losses, test_losses, axis = train(model, EPOCHS, BATCH_SIZE, LR, act='relu')
+    plt.subplot(122)
+    plt.title('relu')
+    plt.xlabel('epochs')
+    plt.ylabel('loss')
+    plt.ylim(0.1,0.6)
+    plt.plot(axis, train_losses, c='blue', label='train')
+    plt.plot(axis, test_losses, c='red', label='test')
+    plt.legend()
+    
+    plt.show()
+    
 if __name__ == "__main__":
     main()
     
